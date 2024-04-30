@@ -1,0 +1,289 @@
+---
+title: "Final Experiment"
+output:
+  pdf_document: default
+  html_document: default
+date: "2024-04-23"
+---
+
+```{r}
+setwd("/Users/naimaamraan/Desktop/experiments_and_causality")
+```
+
+```{r}
+getwd()
+```
+
+
+```{r setup, include=FALSE}
+# Load the library
+library(readr)
+
+# Read the CSV file into R
+data <- read_csv("experiment_data.csv")
+
+```
+
+
+
+
+```{r view_data}
+# View the first few rows of the dataset
+head(data)
+```
+
+
+```{r cars}
+# Replace spaces with underscores in column names
+names(data) <- gsub(" ", "_", names(data))
+
+```
+
+```{r}
+head(data)
+```
+
+
+```{r}
+# Convert factors to characters 
+data$Treatment_Location <- as.character(data$Treatment_Location)
+```
+
+
+
+```{r}
+str(data)
+```
+
+```{r}
+# Subset data for Library and Noisy Café
+library_data <- subset(data, Treatment_Location == "Noisy Café")
+noisy_cafe_data <- subset(data, Treatment_Location == "Library")
+```
+
+
+```{r}
+print(library_data)
+
+```
+
+
+
+```{r}
+nrow(library_data)
+nrow(noisy_cafe_data)
+
+```
+
+
+```{r}
+print(head(library_data))
+print(nrow(library_data))
+
+```
+
+```{r}
+# Load the dplyr package
+library(dplyr)
+
+# Create a new dataframe with switched values
+switched_data <- data %>%
+  mutate(Treatment_Location = ifelse(Treatment_Location == "Noisy Café", "Library", 
+                                     ifelse(Treatment_Location == "Library", "Noisy Café", Treatment_Location)))
+
+# Check the first few rows of the new dataframe
+head(switched_data)
+
+```
+
+
+
+```{r}
+
+library(stargazer)
+
+# Fit a linear model for creativity scores based on treatment location
+model_creativity_location <- lm(Treatment_Creativity_Score ~ Treatment_Location, data = switched_data)
+
+# Fit a linear model for problem-solving scores based on treatment location
+model_problem_solving_location <- lm(Treatment_Problem_Solving_Score ~ Treatment_Location, data = switched_data)
+
+# Print the summary of the models to see the results
+summary(model_creativity_location)
+summary(model_problem_solving_location)
+
+# Create a formatted table
+stargazer(model_creativity_location, type = "text")
+stargazer(model_problem_solving_location, type = "text")
+
+```
+
+
+
+```{r}
+# Fit an ANCOVA model
+# For creativity score:
+ancova_creativity <- lm(Treatment_Creativity_Score ~ Treatment_Location + Baseline_Creativity_Score, data = switched_data)
+
+# For problem-solving score:
+ancova_problem_solving <- lm(Treatment_Problem_Solving_Score ~ Treatment_Location + Baseline_Problem_Solving_Score, data = switched_data)
+
+# Conduct the ANOVA on the linear model
+anova_creativity <- anova(ancova_creativity)
+anova_problem_solving <- anova(ancova_problem_solving)
+
+# Print the ANOVA summaries
+print(anova_creativity)
+print(anova_problem_solving)
+
+# Print the detailed summaries of the models
+summary(ancova_creativity)
+summary(ancova_problem_solving)
+
+# Create a formatted table
+stargazer(ancova_creativity, type = "text")
+stargazer(ancova_problem_solving, type = "text")
+
+
+```
+
+
+```{r}
+
+# 'Order of Treatment' as a factor
+switched_data$Order_of_Treatment <- as.factor(switched_data$Order_of_Treatment)
+
+# Fit a linear model for creativity scores including the order of treatment
+model_creativity_order_treatment <- lm(Treatment_Creativity_Score ~ Treatment_Location + Order_of_Treatment, data = switched_data)
+
+# Fit a linear model for problem-solving scores including the order of treatment
+model_problem_solving_order_treatment <- lm(Treatment_Problem_Solving_Score ~ Treatment_Location + Order_of_Treatment, data = switched_data)
+
+# Print the summary of the models to see the results
+summary(model_creativity_order_treatment)
+summary(model_problem_solving_order_treatment)
+
+# Create a formatted table
+stargazer(model_creativity_order_treatment, type = "text")
+stargazer(model_problem_solving_order_treatment, type = "text")
+
+
+```
+
+```{r}
+# Load libraries
+library(ggplot2)
+library(tidyr)
+
+# Adjusted simulation function for two types of scores
+simulate_and_analyze <- function(n, mean_diff_creative, mean_diff_problem, sd_noise = 10) {
+  
+  # Here we use the same n for simplicity
+  group <- rep(c("Library", "Noisy Café"), each = n)
+  order <- rep(c("1-2", "2-1"), each = n)
+  
+  # Creative scores simulation
+  creative_score <- ifelse(group == "Library", 50, 50 + mean_diff_creative) +
+                    ifelse(order == "2-1", -0.1 * mean_diff_creative, 0) +
+                    rnorm(2 * n, sd = sd_noise)
+  
+  # Problem-solving scores simulation
+  problem_solving_score <- ifelse(group == "Library", 50, 50 - mean_diff_problem) +
+                           ifelse(order == "2-1", 0.1 * mean_diff_problem, 0) +
+                           rnorm(2 * n, sd = sd_noise)
+
+  d_t <- data.frame(group = factor(group), order = factor(order),
+                    creative_score = creative_score, problem_solving_score = problem_solving_score)
+
+  # Analyzing both scores
+  creative_model <- lm(creative_score ~ group + order, data = d_t)
+  problem_solving_model <- lm(problem_solving_score ~ group + order, data = d_t)
+
+  # Extracting p-values
+  creative_significant <- ifelse(summary(creative_model)$coefficients['groupNoisy Café',4] < 0.05, 1, 0)
+  problem_solving_significant <- ifelse(summary(problem_solving_model)$coefficients['groupNoisy Café',4] < 0.05, 1, 0)
+
+  return(c(creative_significant, problem_solving_significant))
+}
+
+# Function to estimate power for both scores
+estimate_power <- function(sample_sizes, mean_diff_creative, mean_diff_problem, n_simulations = 1000) {
+  results <- expand.grid(SampleSize = sample_sizes, ScoreType = c("Creative", "Problem Solving"))
+  results$Power <- NA
+  
+  for (i in seq(nrow(results))) {
+    type <- results$ScoreType[i]
+    mean_diff <- if(type == "Creative") mean_diff_creative else mean_diff_problem
+    simulations <- replicate(n_simulations, simulate_and_analyze(results$SampleSize[i], mean_diff_creative, mean_diff_problem))
+    results$Power[i] <- mean(simulations[if(type == "Creative") 1 else 2, ])
+  }
+  
+  return(results)
+}
+
+# Parameters for simulation with different expected mean differences
+sample_sizes <- seq(20, 100, by = 10)
+mean_diff_creative <- 2.5  # Adjust based on your experimental design
+mean_diff_problem <- 1.5   # Adjust based on your experimental design
+
+# Run power analysis simulation
+power_results <- estimate_power(sample_sizes, mean_diff_creative, mean_diff_problem)
+
+# Plot the results
+power_results %>%
+  ggplot(aes(x = SampleSize, y = Power, color = ScoreType)) +
+  geom_line() +
+  geom_point() +
+  theme_minimal() +
+  labs(title = "Power Analysis for Different Score Types",
+       x = "Sample Size", y = "Power", color = "Score Type")
+
+```
+
+```{r}
+# Calculate mean scores for each treatment location
+library(dplyr)
+library(ggplot2)
+
+means <- switched_data %>%
+  group_by(Treatment_Location) %>%
+  summarise(
+    Mean_Creativity_Score = mean(Treatment_Creativity_Score, na.rm = TRUE),
+    Mean_Problem_Solving_Score = mean(Treatment_Problem_Solving_Score, na.rm = TRUE)
+  ) %>%
+  pivot_longer(cols = c(Mean_Creativity_Score, Mean_Problem_Solving_Score),
+               names_to = "ScoreType", 
+               values_to = "MeanScore")
+
+# Create a bar graph of mean scores by treatment location
+ggplot(means, aes(x = Treatment_Location, y = MeanScore, fill = ScoreType)) +
+  geom_bar(stat = "identity", position = position_dodge()) +
+  scale_fill_manual(values = c("#01bfc4", "#f7756d")) +  # Added '#' to the hex codes
+  labs(title = "Mean Scores by Treatment Location", y = "Mean Score", x = "Treatment Location") +
+  theme_minimal()
+
+
+```
+
+
+
+```{r}
+# Create boxplots for each score type by treatment location
+switched_data %>%
+  pivot_longer(cols = c(Treatment_Creativity_Score, Treatment_Problem_Solving_Score),
+               names_to = "ScoreType", 
+               values_to = "Score") %>%
+  ggplot(aes(x = Treatment_Location, y = Score, fill = Treatment_Location)) +
+  geom_boxplot() +
+  facet_wrap(~ScoreType, scales = "free") +
+  theme_minimal() +
+  labs(title = "Distribution of Scores by Treatment Location", y = "Scores", x = "Treatment Location")
+
+```
+
+
+
+
+
+
+
